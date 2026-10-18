@@ -19,12 +19,17 @@ One row in my ML feature table = one month of statewide Montana crossings.
 [For hand-downloaded files, list the URL, date downloaded, and the clicks or filters you used.]
 
 ## How to Run
-1. Create and activate a virtual environment
-2. Install packages: pip install -r requirements.txt
-3. Create a .env file with your API keys and DB_PASSWORD 
-4. Pull the data: run each script in etl/ (e.g., python etl/extract_games.py)  
-5. Build the database: run sql/schema.sql in pgAdmin or psql
-6. Confirm it worked: python db_check.py (should print all table names)
+Prerequisites:
+- PostgreSQL is running.
+- The project virtual environment is activated (packages installed with `pip install -r requirements.txt`).
+- A local `.env` file contains the required database settings: `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER` and `DB_PASSWORD`.
+- The command is run from the repository's top-level folder.
+
+```powershell
+python run_pipeline.py
+```
+
+This one command downloads all three raw sources, transforms them into clean tables and the ML feature table, recreates and loads the PostgreSQL database, and runs all six quality checks.
 
 
 ## AI Usage
