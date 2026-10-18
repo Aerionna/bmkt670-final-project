@@ -228,15 +228,115 @@ for port_code in dim_port["port_code"]:
             absent_rows.append((port_code, month_id))
 
 
-# --- 9. Save the clean tables -------------------------------------------------
+# --- 9. Build the ML feature table --------------------------------------------
+# One row per month: add the passenger crossings of all ports together.
+ml_features = fact_border_crossings.groupby("month_id", as_index=False)["passenger_crossings"].sum()
+ml_features = ml_features.rename(columns={"passenger_crossings": "statewide_crossings"})
+
+# Join the month details, exchange rate and national travel count on month_id.
+# how="inner" keeps only the months that every table has.
+ml_features = ml_features.merge(dim_month, on="month_id", how="inner")
+ml_features = ml_features.merge(fact_exchange_rates, on="month_id", how="inner")
+ml_features = ml_features.merge(fact_national_travel, on="month_id", how="inner")
+
+# Put the months in time order and number the rows 0, 1, 2, ...
+ml_features = ml_features.sort_values("month_id").reset_index(drop=True)
+
+# shift(1) below means "the row above". That is only the previous calendar
+# month if no month is skipped, so confirm the months are continuous.
+months_in_range = pd.date_range(start=ml_features["month_start"].iloc[0],
+                                end=ml_features["month_start"].iloc[-1], freq="MS")
+if len(ml_features) != len(months_in_range):
+    raise SystemExit("Error: the joined monthly data skips a month, so the lags would be wrong")
+
+# Lag features: shift(1) moves every value down one row, so each month gets
+# the previous month's value and never its own.
+ml_features["usd_cad_rate_lag1"] = ml_features["usd_cad_rate"].shift(1)
+ml_features["national_travel_lag1"] = ml_features["canadian_auto_return_trips"].shift(1)
+ml_features["crossings_lag1"] = ml_features["statewide_crossings"].shift(1)
+
+# Rolling average of the three previous months. shift(1) comes first so the
+# current month is left out, then rolling(3) averages the three rows above.
+rolling_window = 3
+ml_features["crossings_rolling_3"] = (
+    ml_features["statewide_crossings"].shift(1).rolling(rolling_window).mean()
+)
+
+# The first three months do not have three earlier months, so their rolling
+# average is empty. Remove exactly those first rows (not dropna on everything).
+history_rows_removed = rolling_window
+ml_features = ml_features.iloc[history_rows_removed:]
+
+# Remove March 2020 to December 2021 (COVID border restrictions). This is done
+# after the lags so the months right after COVID still have lag values.
+# The fact tables and CSV files above still keep these months.
+is_covid_month = (ml_features["month_id"] >= 202003) & (ml_features["month_id"] <= 202112)
+covid_rows_removed = is_covid_month.sum()
+ml_features = ml_features[~is_covid_month]  # ~ means "not": keep the non-COVID rows
+
+# Season indicators. Winter (December-February) is the baseline, so it has 0 in all three.
+ml_features["is_spring"] = ml_features["month_number"].isin([3, 4, 5]).astype(int)
+ml_features["is_summer"] = ml_features["month_number"].isin([6, 7, 8]).astype(int)
+ml_features["is_fall"] = ml_features["month_number"].isin([9, 10, 11]).astype(int)
+
+# Split by year: through 2023 = train, 2024 = validate, 2025 and later = test.
+ml_features["split"] = "train"
+ml_features.loc[ml_features["year"] == 2024, "split"] = "validate"
+ml_features.loc[ml_features["year"] >= 2025, "split"] = "test"
+
+# shift() turned the lag columns into decimals. Make the counts whole numbers
+# again and round the rolling average to 2 decimals, as in schema.sql.
+ml_features["national_travel_lag1"] = ml_features["national_travel_lag1"].astype(int)
+ml_features["crossings_lag1"] = ml_features["crossings_lag1"].astype(int)
+ml_features["crossings_rolling_3"] = ml_features["crossings_rolling_3"].round(2)
+
+# Keep only the schema.sql columns, in the same order.
+ml_features_crossings = ml_features[[
+    "month_id", "month_start", "year", "month_number", "statewide_crossings",
+    "usd_cad_rate_lag1", "national_travel_lag1", "crossings_lag1", "crossings_rolling_3",
+    "is_spring", "is_summer", "is_fall", "split",
+]]
+
+
+# --- 10. Check the ML feature table -------------------------------------------
+# The last month should be the latest month that all three sources share.
+latest_shared_month_id = min(fact_border_crossings["month_id"].max(),
+                             fact_exchange_rates["month_id"].max(),
+                             fact_national_travel["month_id"].max())
+if ml_features_crossings["month_id"].iloc[0] != 201704:
+    raise SystemExit("Error: the ML table should start in 201704")
+if ml_features_crossings["month_id"].iloc[-1] != latest_shared_month_id:
+    raise SystemExit(f"Error: the ML table should end in {latest_shared_month_id}")
+if ml_features_crossings["month_id"].duplicated().any():
+    raise SystemExit("Error: the ML table has duplicate month_id values")
+if ml_features_crossings.isna().any().any():
+    raise SystemExit("Error: the ML table has missing values")
+if covid_rows_removed != 22:
+    raise SystemExit(f"Error: expected to remove 22 COVID rows, removed {covid_rows_removed}")
+if ((ml_features_crossings["month_id"] >= 202003) & (ml_features_crossings["month_id"] <= 202112)).any():
+    raise SystemExit("Error: the ML table still has COVID-period rows")
+for column in ["is_spring", "is_summer", "is_fall"]:
+    if not ml_features_crossings[column].isin([0, 1]).all():
+        raise SystemExit(f"Error: {column} has a value other than 0 or 1")
+if not ml_features_crossings["split"].isin(["train", "validate", "test"]).all():
+    raise SystemExit("Error: split has a value other than train, validate or test")
+if (ml_features_crossings[["statewide_crossings", "national_travel_lag1",
+                           "crossings_lag1", "crossings_rolling_3"]] < 0).any().any():
+    raise SystemExit("Error: the ML table has a negative count")
+if (ml_features_crossings["usd_cad_rate_lag1"] <= 0).any():
+    raise SystemExit("Error: the ML table has a usd_cad_rate_lag1 that is not above zero")
+
+
+# --- 11. Save the clean tables ------------------------------------------------
 dim_month.to_csv(clean_folder / "dim_month.csv", index=False)
 dim_port.to_csv(clean_folder / "dim_port.csv", index=False)
 fact_border_crossings.to_csv(clean_folder / "fact_border_crossings.csv", index=False)
 fact_exchange_rates.to_csv(clean_folder / "fact_exchange_rates.csv", index=False)
 fact_national_travel.to_csv(clean_folder / "fact_national_travel.csv", index=False)
+ml_features_crossings.to_csv(clean_folder / "ml_features_crossings.csv", index=False)
 
 
-# --- 10. Print a summary ------------------------------------------------------
+# --- 12. Print a summary ------------------------------------------------------
 print(f"BTS raw rows before the 2017 filter: {bts_raw_rows}")
 print(f"BTS rows removed by the date filter:  {bts_rows_removed}")
 print()
@@ -268,4 +368,16 @@ if absent_rows:
 else:
     print("No missing port-month rows remain.")
 print()
-print(f"Saved 5 CSV files to {clean_folder}")
+print("ml_features_crossings:")
+print(f"  Removed the first {history_rows_removed} rows because they do not have "
+      f"{rolling_window} previous months for crossings_rolling_3.")
+print(f"  Excluded {covid_rows_removed} rows (March 2020 to December 2021) because COVID border "
+      f"restrictions made them unrepresentative of normal travel demand.")
+print(f"  {len(ml_features_crossings)} rows, months {ml_features_crossings['month_id'].iloc[0]} "
+      f"to {ml_features_crossings['month_id'].iloc[-1]}")
+print(f"  train: {(ml_features_crossings['split'] == 'train').sum()}, "
+      f"validate: {(ml_features_crossings['split'] == 'validate').sum()}, "
+      f"test: {(ml_features_crossings['split'] == 'test').sum()}")
+print("  (expected with the current source files: 90 rows, 59 train, 12 validate, 19 test)")
+print()
+print(f"Saved 6 CSV files to {clean_folder}")

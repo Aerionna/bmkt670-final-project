@@ -5,9 +5,10 @@ files in `data/raw/`, which the scripts in `etl/` produce.
 
 The project predicts **one statewide Montana monthly total** of inbound
 personal-vehicle passenger crossings. The border-crossing tables keep
-port-level detail. The future ML feature table (not part of `schema.sql`) will
-add the ports together into one statewide row per month and join the other
-monthly tables on `month_id`.
+port-level detail. The ML feature table, `ml_features_crossings`, is included
+in `schema.sql` and is built by `etl/transform.py`. It adds the ports together
+into one statewide row per month and joins the other monthly tables on
+`month_id`.
 
 Raw files:
 
@@ -35,6 +36,19 @@ Raw files:
 | fact_exchange_rates | usd_cad_rate | Bank of Canada `observations[].FXMUSDCAD.v` | Converted from a text string (for example, `"1.3962"`) to a number. It is the monthly average value of 1 U.S. dollar in Canadian dollars. | **Model feature, or input to lagged features** (for example, the prior month's rate). A higher value means the U.S. is more expensive for Canadians. Also a **dashboard field.** |
 | fact_national_travel | month_id | Joined from `dim_month.month_id` | Calculated in Python from Statistics Canada `vectorDataPoint[].refPer` (for example, `2026-07-01` → `202607`) in YYYYMM format, then matched to `dim_month` (foreign key). | **Key.** Primary key and link to `dim_month`; joins the national travel count to the statewide monthly row. |
 | fact_national_travel | canadian_auto_return_trips | Statistics Canada `vectorDataPoint[].value` | Converted from a decimal-format number (for example, `2198865.0`) to an integer. The API request already limits the data to vector `1296956601`, which counts all Canadian residents returning from the U.S. by automobile (same-day and overnight). | **Model feature, or input to lagged features** (for example, the prior month's national count). It shows the national trend in Canadians driving to the U.S. Also a **dashboard field.** |
+| ml_features_crossings | month_id | `fact_border_crossings.month_id`, inner-joined to `dim_month`, `fact_exchange_rates` and `fact_national_travel` on `month_id` | The statewide monthly totals are inner-joined on `month_id`, so only months that all source tables share are kept. The first 3 months (no 3-month history) and March 2020–December 2021 (COVID) are then removed. | **Key.** Primary key and foreign key to `dim_month`. One row per statewide Montana month. |
+| ml_features_crossings | month_start | `dim_month.month_start` | Joined from `dim_month` on `month_id`. | **Dashboard field.** Date axis for charts of actual and predicted values. |
+| ml_features_crossings | year | `dim_month.year` | Joined from `dim_month` on `month_id`. | **Dashboard field.** Also used in Python to assign `split`. |
+| ml_features_crossings | month_number | `dim_month.month_number` | Joined from `dim_month` on `month_id`. | **Dashboard field.** Also used in Python to create the three season indicators. |
+| ml_features_crossings | statewide_crossings | `fact_border_crossings.passenger_crossings` | Calculated in Python: sum of `passenger_crossings` across all 12 Montana ports for each `month_id` (`groupby` + `sum`). Includes the seven filled Willow Creek values (see `docs/missing_data.md`). | **Target.** The value the model predicts. Also a **dashboard field.** |
+| ml_features_crossings | usd_cad_rate_lag1 | `fact_exchange_rates.usd_cad_rate` | Calculated in Python: the previous calendar month’s rate (`shift(1)` on rows sorted by `month_id`, after confirming no month is skipped). Uses prior months only. | **Feature** (lagged). |
+| ml_features_crossings | national_travel_lag1 | `fact_national_travel.canadian_auto_return_trips` | Calculated in Python: the previous calendar month’s count (`shift(1)`). Uses prior months only. | **Feature** (lagged). |
+| ml_features_crossings | crossings_lag1 | `statewide_crossings` (calculated above) | Calculated in Python: the previous calendar month’s statewide total (`shift(1)`). Uses prior months only; the current month is never included. | **Derived feature** (lagged target). |
+| ml_features_crossings | crossings_rolling_3 | `statewide_crossings` (calculated above) | Calculated in Python: `shift(1)` first, then `rolling(3).mean()`, so it is the average of the three previous months and never includes the current month. Rounded to 2 decimals. Calculated before the COVID rows are removed. | **Derived feature** (rolling average of the lagged target). |
+| ml_features_crossings | is_spring | `dim_month.month_number` | Calculated in Python: 1 if `month_number` is 3, 4 or 5; otherwise 0. | **Encoded categorical feature** (season). Winter (December–February) is the baseline: all three season fields are 0. |
+| ml_features_crossings | is_summer | `dim_month.month_number` | Calculated in Python: 1 if `month_number` is 6, 7 or 8; otherwise 0. | **Encoded categorical feature** (season). |
+| ml_features_crossings | is_fall | `dim_month.month_number` | Calculated in Python: 1 if `month_number` is 9, 10 or 11; otherwise 0. | **Encoded categorical feature** (season). |
+| ml_features_crossings | split | `dim_month.year` (from `month_id`) | Calculated in Python from `year`: `train` through 2023, `validate` for 2024, `test` for 2025 and later. | **Split label.** Separates training, validation and test rows in time order. Not a model feature. |
 
 ## Source Fields Used but Not Stored
 
@@ -95,8 +109,14 @@ The same table has two narrower alternatives that were not used:
 
 - Monthly ranges in the raw files: BTS `1996-01`–`2026-08`, Bank of Canada
   `2017-01`–`2026-09`, Statistics Canada `2017-01`–`2026-07` (start set by
-  `startRefPeriod`). An inner join on
-  `month_id` across all three gives about `2017-01`–`2026-07`.
+  `startRefPeriod`). The three sources have common coverage from `2017-01`
+  through `2026-07`.
+- `ml_features_crossings` has eligible rows from `2017-04` through `2026-07`.
+  The first three months (`2017-01`–`2017-03`) are removed because they lack
+  the three prior months needed for `crossings_rolling_3`.
+- March 2020 through December 2021 are excluded from `ml_features_crossings`
+  (COVID border restrictions), so its monthly coverage is not continuous
+  across that period. These months remain in the dimension and fact tables.
 - See the Data Limitations section in `README.md`. BTS counts crossings, not
   unique travelers or nationality. Statistics Canada is a national trend and
   does not identify Montana as the destination.
