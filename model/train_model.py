@@ -1,7 +1,8 @@
 # train_model.py
 # Purpose: Read the ML feature table (ml_features_crossings) from PostgreSQL,
-#          split it into train, validate and test DataFrames, and explore the
-#          training rows with summaries and charts.
+#          split it into train, validate and test DataFrames, explore the
+#          training rows with summaries and charts, and score a baseline model
+#          on the validation rows.
 # Run from the project folder:  python model/train_model.py
 
 import os  # reads the settings that load_dotenv puts into the environment
@@ -174,3 +175,22 @@ plt.close()
 
 print()
 print(f"Saved 4 charts to {figures_folder}")
+
+
+# --- 7. Baseline model: predict the training mean -----------------------------
+# The simplest sensible guess for any month is the average month seen in training.
+# Later models must beat this baseline to be worth using.
+# Only train is used here, so no validation answers leak into the prediction.
+baseline_prediction = train["statewide_crossings"].mean()
+
+# The baseline ignores every feature, so every validation month gets the same
+# prediction: the training mean.
+# MAE = the average of |actual - predicted|. Lower MAE is better.
+validation_errors = (validate["statewide_crossings"] - baseline_prediction).abs()
+baseline_mae = validation_errors.mean()
+
+print()
+print("Baseline model (training mean)")
+print(f"  Training mean used as the prediction: {baseline_prediction:,.0f}")
+print(f"  Validation rows scored: {len(validate)}")
+print(f"  Baseline validation MAE: {baseline_mae:,.0f}")

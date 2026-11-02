@@ -45,3 +45,11 @@ Within the narrow range observed in the training data (about 1.23 to 1.37), the 
 ![Statewide crossings vs. previous month's Canadian automobile trips](figures/crossings_vs_national_travel.png)
 
 The previous month’s Canadian automobile trips show the strongest visible numerical relationship with statewide crossings (r = 0.61), but national and Montana travel may both reflect the same seasonal pattern, so this association does not show that national travel drives Montana crossings.
+
+## Evaluation Metric
+
+The target, `statewide_crossings`, is a numeric count, so this is a regression problem. Models will be compared using mean absolute error (MAE): the average absolute difference between actual and predicted monthly crossings. MAE stays in passenger-crossing units, so a nontechnical manager can read it directly, and a lower MAE means better predictions. For example, an MAE of 8,000 means predictions are off by about 8,000 passenger crossings per month on average. MAE will be used to compare the baseline with later models.
+
+## Baseline Model
+
+The baseline predicts the training mean, 84,551 crossings, for every month, using no features. Scored on the 12 validation months (2024), it has an MAE of 33,381 crossings. A later model improves on the baseline only if its validation MAE is lower than 33,381.
