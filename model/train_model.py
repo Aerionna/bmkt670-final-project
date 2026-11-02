@@ -1,8 +1,8 @@
 # train_model.py
 # Purpose: Read the ML feature table (ml_features_crossings) from PostgreSQL,
 #          split it into train, validate and test DataFrames, explore the
-#          training rows with summaries and charts, and score a baseline model
-#          on the validation rows.
+#          training rows with summaries and charts, then score a baseline and
+#          three regression models on the validation rows.
 # Run from the project folder:  python model/train_model.py
 
 import os  # reads the settings that load_dotenv puts into the environment
@@ -13,6 +13,9 @@ import pandas as pd  # holds the table as a DataFrame
 import psycopg2  # talks to the PostgreSQL database
 from dotenv import load_dotenv  # reads the .env file
 from matplotlib.ticker import MaxNLocator  # makes an axis use whole-number ticks
+from sklearn.ensemble import RandomForestRegressor  # many trees averaged together
+from sklearn.linear_model import LinearRegression  # straight-line model
+from sklearn.tree import DecisionTreeRegressor  # one tree of yes/no splits
 
 # --- 1. Database settings -----------------------------------------------------
 # Read .env from the project folder. The values are never printed.
@@ -194,3 +197,72 @@ print("Baseline model (training mean)")
 print(f"  Training mean used as the prediction: {baseline_prediction:,.0f}")
 print(f"  Validation rows scored: {len(validate)}")
 print(f"  Baseline validation MAE: {baseline_mae:,.0f}")
+
+
+# --- 8. Train and compare three models ----------------------------------------
+# The features the models may use. Other columns are left out on purpose:
+#   month_id, month_start - identifiers that label the row
+#   split                 - an administrative label (train, validate or test)
+#   statewide_crossings   - the target; using it would give away the answer
+#   year, month_number    - could impose a misleading time trend (the season
+#                           fields already describe the time of year)
+feature_columns = [
+    "usd_cad_rate_lag1",
+    "national_travel_lag1",
+    "crossings_lag1",
+    "crossings_rolling_3",
+    "is_spring",
+    "is_summer",
+    "is_fall",
+]
+target_column = "statewide_crossings"
+
+# X = the features (inputs), y = the target (the answer to predict).
+X_train = train[feature_columns]
+y_train = train[target_column]
+X_validate = validate[feature_columns]
+y_validate = validate[target_column]
+
+# There are only 59 training rows, so trees could memorize single months.
+# max_depth and min_samples_leaf keep the trees small so they learn general
+# patterns instead. random_state=42 gives the same result on every run.
+models = {
+    "Linear Regression": LinearRegression(),
+    "Decision Tree": DecisionTreeRegressor(
+        max_depth=3,
+        min_samples_leaf=2,
+        random_state=42,
+    ),
+    "Random Forest": RandomForestRegressor(
+        n_estimators=100,
+        max_depth=4,
+        min_samples_leaf=2,
+        random_state=42,
+    ),
+}
+
+# The comparison table starts with the baseline row from section 7.
+results = [{"Model": "Baseline (training mean)", "Validation MAE": baseline_mae}]
+
+for model_name, model in models.items():
+    model.fit(X_train, y_train)  # learn from the training rows only
+    predictions = model.predict(X_validate)  # predict the validation months
+    # Same MAE as the baseline: the average of |actual - predicted|.
+    validation_mae = (y_validate - predictions).abs().mean()
+    results.append({"Model": model_name, "Validation MAE": validation_mae})
+
+results_table = pd.DataFrame(results)
+
+print()
+print(f"Model comparison ({len(validate)} validation months, lower MAE is better)")
+print(results_table.to_string(index=False, formatters={"Validation MAE": "{:,.0f}".format}))
+
+# Find the row with the lowest validation MAE.
+best_row = results_table.loc[results_table["Validation MAE"].idxmin()]
+print()
+print(f"Lowest validation MAE: {best_row['Model']} ({best_row['Validation MAE']:,.0f})")
+if best_row["Validation MAE"] < baseline_mae:
+    improvement = baseline_mae - best_row["Validation MAE"]
+    print(f"It beats the baseline MAE of {baseline_mae:,.0f} by {improvement:,.0f} crossings.")
+else:
+    print(f"No model beats the baseline MAE of {baseline_mae:,.0f}.")

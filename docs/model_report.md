@@ -53,3 +53,16 @@ The target, `statewide_crossings`, is a numeric count, so this is a regression p
 ## Baseline Model
 
 The baseline predicts the training mean, 84,551 crossings, for every month, using no features. Scored on the 12 validation months (2024), it has an MAE of 33,381 crossings. A later model improves on the baseline only if its validation MAE is lower than 33,381.
+
+## Model Comparison
+
+Three models were trained on the 59 training months using seven features (previous month's exchange rate, national automobile travel and Montana crossings, the three-month rolling average, and three season indicators). Tree depth and leaf size were limited to reduce overfitting on the small training set.
+
+| Model | Validation MAE |
+| :---- | -------------: |
+| Baseline (training mean) | 33,381 |
+| Linear Regression | 19,573 |
+| Decision Tree | 13,082 |
+| Random Forest | 10,096 |
+
+All three models beat the baseline. Random Forest had the lowest validation MAE, about 70% below the baseline, meaning its 2024 predictions were off by about 10,100 crossings per month on average. These results come from only 12 validation months; the test set has not been used.
