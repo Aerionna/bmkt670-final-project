@@ -266,3 +266,40 @@ if best_row["Validation MAE"] < baseline_mae:
     print(f"It beats the baseline MAE of {baseline_mae:,.0f} by {improvement:,.0f} crossings.")
 else:
     print(f"No model beats the baseline MAE of {baseline_mae:,.0f}.")
+
+
+# --- 9. Final test of the selected model --------------------------------------
+# Random Forest was selected in Step 5 because it had the lowest validation MAE.
+# The test rows are the final, unbiased check: the model has never seen them,
+# and they were not used to choose the model. After this score is seen, the
+# model, features and settings must not be changed to improve it, or the test
+# would no longer be a fair check.
+selected_model_name = "Random Forest"
+selected_model = models[selected_model_name]  # already fitted on train only
+
+# Validation MAE of the same fitted model, for a direct comparison.
+selected_validation_mae = (y_validate - selected_model.predict(X_validate)).abs().mean()
+
+# Use the same seven features as training.
+X_test = test[feature_columns]
+y_test = test[target_column]
+
+# Predict the test months once and score them with the same MAE as before.
+test_predictions = selected_model.predict(X_test)
+test_mae = (y_test - test_predictions).abs().mean()
+
+# Positive difference = the test error is larger than the validation error.
+mae_difference = test_mae - selected_validation_mae
+percent_difference = mae_difference / selected_validation_mae * 100
+
+print()
+print("Final test result")
+print(f"  Selected model: {selected_model_name}")
+print(f"  Validation MAE: {selected_validation_mae:,.0f}")
+print(f"  Test rows: {len(test)}, months {test['month_id'].min()} to {test['month_id'].max()}")
+print(f"  Test MAE: {test_mae:,.0f}")
+print(f"  Test minus validation MAE: {mae_difference:+,.0f}")
+if percent_difference > 0:
+    print(f"  Test MAE is {percent_difference:.1f}% higher than validation MAE")
+else:
+    print(f"  Test MAE is {abs(percent_difference):.1f}% lower than validation MAE")

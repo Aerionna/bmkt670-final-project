@@ -66,3 +66,13 @@ Three models were trained on the 59 training months using seven features (previo
 | Random Forest | 10,096 |
 
 All three models beat the baseline. Random Forest had the lowest validation MAE, about 70% below the baseline, meaning its 2024 predictions were off by about 10,100 crossings per month on average. These results come from only 12 validation months; the test set has not been used.
+
+## Final Test Result
+
+Random Forest was selected because it had the lowest validation MAE. The same fitted model (trained on the 59 training months only) was then scored once on the 19 test months, January 2025 through July 2026.
+
+| Selected model | Validation MAE (2024) | Test MAE (Jan 2025–Jul 2026) |
+| :------------- | --------------------: | ---------------------------: |
+| Random Forest | 10,096 | 13,243 |
+
+Test performance was worse: the test MAE was 3,148 crossings (about 31%) higher than the validation MAE. The higher test MAE may reflect changes in Canadian travel patterns during 2025–2026 that were not fully represented in the training data. The test set also contains only 19 months, so a few unusual months can have a noticeable effect on MAE. These are possible explanations and were not tested in this analysis. No model, feature or setting changes were made after viewing the test result.
