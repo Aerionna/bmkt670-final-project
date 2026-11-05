@@ -303,3 +303,36 @@ if percent_difference > 0:
     print(f"  Test MAE is {percent_difference:.1f}% higher than validation MAE")
 else:
     print(f"  Test MAE is {abs(percent_difference):.1f}% lower than validation MAE")
+
+
+# --- 10. Feature importance of the selected model -----------------------------
+# feature_importances_ comes from how the trees were built on the training rows,
+# so no validation or test answers are used here.
+# - Higher importance means the Random Forest relied more heavily on that feature.
+# - Importance does not prove that a feature causes changes in crossings.
+# - Importance does not show whether a feature raises or lowers predictions.
+# - Features that carry similar information, such as crossings_lag1 and
+#   crossings_rolling_3, may divide the importance between them.
+importance_table = pd.DataFrame(
+    {
+        "Feature": feature_columns,  # same order the model was trained with
+        "Importance": selected_model.feature_importances_,
+    }
+)
+importance_table = importance_table.sort_values("Importance", ascending=False)
+
+print()
+print("Random Forest feature importance (highest first)")
+print(importance_table.to_string(index=False, formatters={"Importance": "{:.1%}".format}))
+
+print()
+print("Top five features")
+top_five = importance_table.head(5)
+print(top_five.to_string(index=False, formatters={"Importance": "{:.1%}".format}))
+
+# The importance values should add up to 1 (100%).
+importance_total = importance_table["Importance"].sum()
+print()
+print(f"Total importance: {importance_total:.1%}")
+if abs(importance_total - 1) > 0.001:
+    raise ValueError("The feature importance values do not add up to about 100%")

@@ -76,3 +76,15 @@ Random Forest was selected because it had the lowest validation MAE. The same fi
 | Random Forest | 10,096 | 13,243 |
 
 Test performance was worse: the test MAE was 3,148 crossings (about 31%) higher than the validation MAE. The higher test MAE may reflect changes in Canadian travel patterns during 2025–2026 that were not fully represented in the training data. The test set also contains only 19 months, so a few unusual months can have a noticeable effect on MAE. These are possible explanations and were not tested in this analysis. No model, feature or setting changes were made after viewing the test result.
+
+## Feature Importance
+
+| Feature | Importance |
+| :------ | ---------: |
+| is_summer | 50.0% |
+| crossings_lag1 | 32.0% |
+| national_travel_lag1 | 8.8% |
+| crossings_rolling_3 | 6.4% |
+| is_fall | 1.9% |
+
+The model relied most on whether the month was in summer (50.0%), which matches the training-data finding that summer months averaged about 2.6 times as many crossings as winter months. The previous month's Montana crossings were the second most important signal (32.0%), suggesting the model used recent traffic to gauge the current level of travel. The previous month's Canadian automobile trips were a smaller but useful signal (8.8%); in the training data, higher national travel was associated with higher Montana crossings (r = 0.61). The previous month's exchange rate contributed less than 1%, consistent with its weak relationship with crossings in the training data. Feature importance shows what the model relied on, not what caused changes in crossings, and similar features such as last month's crossings and the three-month average may share importance between them.
