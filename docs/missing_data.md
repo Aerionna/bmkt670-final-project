@@ -6,9 +6,9 @@
 
 ## Notes
 
-- **How the percentage was calculated:** 7 missing values out of 1,392
-  expected port-month observations (12 active ports × 116 months, January 2017
-  to August 2026). 7 / 1,392 = 0.50%.
+- **How the percentage was calculated:** 7 missing values out of 1,404
+  expected port-month observations (12 active ports × 117 months, January 2017
+  to September 2026, as of 2026-11-04). 7 / 1,404 = 0.50%.
 - **The seven filled values are estimates, not reported 2017 observations.**
   `etl/transform.py` looks them up from Willow Creek’s (port 3325) 2016 rows in
   `data/raw/border_crossings_raw.csv` and copies each one into the same month of

@@ -1,8 +1,9 @@
 # train_model.py
 # Purpose: Read the ML feature table (ml_features_crossings) from PostgreSQL,
 #          split it into train, validate and test DataFrames, explore the
-#          training rows with summaries and charts, then score a baseline and
-#          three regression models on the validation rows.
+#          training rows with summaries and charts, score a baseline and three
+#          regression models on the validation rows, test the selected model,
+#          and save its predictions to the predictions table.
 # Run from the project folder:  python model/train_model.py
 
 import os  # reads the settings that load_dotenv puts into the environment
@@ -94,7 +95,6 @@ print(f"Total ML rows: {len(df)}")
 print(f"train:    {len(train)} rows, months {train['month_id'].min()} to {train['month_id'].max()}")
 print(f"validate: {len(validate)} rows, months {validate['month_id'].min()} to {validate['month_id'].max()}")
 print(f"test:     {len(test)} rows, months {test['month_id'].min()} to {test['month_id'].max()}")
-print("(expected with the current source files: 90 total, 59 train, 12 validate, 19 test)")
 
 
 # --- 6. Explore the training rows only ----------------------------------------
@@ -336,3 +336,112 @@ print()
 print(f"Total importance: {importance_total:.1%}")
 if abs(importance_total - 1) > 0.001:
     raise ValueError("The feature importance values do not add up to about 100%")
+
+
+# --- 11. Save the predictions to PostgreSQL -----------------------------------
+# Use the same Random Forest (fitted on train only) to predict every ML row.
+# - Train predictions are included for completeness, but their errors look
+#   better than they really are, because the model learned from those rows.
+# - Validate and test errors are the meaningful measures of how the model
+#   does on months it has not seen.
+all_predictions = selected_model.predict(df[feature_columns])
+
+predictions_df = pd.DataFrame()
+predictions_df["month_id"] = df["month_id"]
+predictions_df["split"] = df["split"]
+predictions_df["actual"] = df["statewide_crossings"]
+predictions_df["predicted"] = all_predictions.round(2)
+# error = actual - predicted. A positive error means the model predicted too
+# low; a negative error means it predicted too high.
+predictions_df["error"] = (predictions_df["actual"] - predictions_df["predicted"]).round(2)
+predictions_df["model_name"] = "random_forest"
+
+# psycopg2 needs regular Python values (int, float, str), not pandas/numpy ones.
+prediction_rows = []
+for index, row in predictions_df.iterrows():
+    prediction_rows.append(
+        (
+            int(row["month_id"]),
+            str(row["split"]),
+            int(row["actual"]),
+            float(row["predicted"]),
+            float(row["error"]),
+            str(row["model_name"]),
+        )
+    )
+
+# Start with "no connection yet" so the cleanup step below knows what to close.
+connection = None
+cursor = None
+
+try:
+    connection = psycopg2.connect(
+        host=os.getenv("DB_HOST"),
+        port=os.getenv("DB_PORT"),
+        dbname=os.getenv("DB_NAME"),
+        user=os.getenv("DB_USER"),
+        password=os.getenv("DB_PASSWORD"),
+    )
+    cursor = connection.cursor()
+
+    # TRUNCATE empties the table first, so running this script again never
+    # creates duplicate rows. psycopg2 starts a transaction automatically.
+    cursor.execute("TRUNCATE TABLE predictions")
+    cursor.executemany(
+        "INSERT INTO predictions (month_id, split, actual, predicted, error, model_name) "
+        "VALUES (%s, %s, %s, %s, %s, %s)",
+        prediction_rows,
+    )
+
+    # Nothing is saved until this line. It only runs if every insert worked.
+    connection.commit()
+
+    # Check what is now in the database.
+    print()
+    print("Saved predictions to PostgreSQL")
+    # The table must have one row for every ML row, and the same rows in each split.
+    cursor.execute("SELECT COUNT(*) FROM predictions")
+    prediction_count = cursor.fetchone()[0]
+    print(f"  Total prediction rows: {prediction_count}")
+    if prediction_count != len(df):
+        raise ValueError(f"predictions has {prediction_count} rows, but the ML table has {len(df)}")
+
+    for split_name in ["train", "validate", "test"]:
+        cursor.execute("SELECT COUNT(*) FROM predictions WHERE split = %s", (split_name,))
+        split_count = cursor.fetchone()[0]
+        print(f"  {split_name} rows: {split_count}")
+        if split_count != (df["split"] == split_name).sum():
+            raise ValueError(f"predictions has a different number of {split_name} rows than the ML table")
+
+    cursor.execute("SELECT DISTINCT model_name FROM predictions")
+    print(f"  Model name: {cursor.fetchone()[0]}")
+
+    # COUNT(*) - COUNT(DISTINCT month_id) is 0 when every month_id is unique.
+    cursor.execute("SELECT COUNT(*) - COUNT(DISTINCT month_id) FROM predictions")
+    duplicate_count = cursor.fetchone()[0]
+    if duplicate_count != 0:
+        raise ValueError(f"predictions has {duplicate_count} duplicate month_id values")
+    print("  No duplicate month_id values")
+
+    cursor.execute("SELECT COUNT(*) FROM predictions WHERE error <> actual - predicted")
+    wrong_error_count = cursor.fetchone()[0]
+    if wrong_error_count != 0:
+        raise ValueError(f"{wrong_error_count} rows have error not equal to actual - predicted")
+    print("  Every error equals actual - predicted")
+    print("  Reminder: only validate and test errors measure performance on unseen months.")
+
+except (psycopg2.Error, OSError) as error:
+    # psycopg2.Error = any database problem; OSError = a connection or file problem.
+    # Undo everything since the connection opened, so no half-loaded table remains.
+    if connection is not None:
+        connection.rollback()
+    print("Error: saving the predictions failed and was rolled back.")
+    print(f"Details: {error}")
+    raise SystemExit(1)
+
+finally:
+    # Always close the cursor and connection, whether the save worked or not.
+    if cursor is not None:
+        cursor.close()
+    if connection is not None:
+        connection.close()

@@ -49,6 +49,12 @@ Raw files:
 | ml_features_crossings | is_summer | `dim_month.month_number` | Calculated in Python: 1 if `month_number` is 6, 7 or 8; otherwise 0. | **Encoded categorical feature** (season). |
 | ml_features_crossings | is_fall | `dim_month.month_number` | Calculated in Python: 1 if `month_number` is 9, 10 or 11; otherwise 0. | **Encoded categorical feature** (season). |
 | ml_features_crossings | split | `dim_month.year` (from `month_id`) | Calculated in Python from `year`: `train` through 2023, `validate` for 2024, `test` for 2025 and later. | **Split label.** Separates training, validation and test rows in time order. Not a model feature. |
+| predictions | month_id | Joined from `ml_features_crossings.month_id` | Copied in Python from the ML feature table row being predicted. One row per ML month. | **Key.** Primary key and foreign key linking each prediction to its month in `ml_features_crossings`. |
+| predictions | split | Joined from `ml_features_crossings.split` | Copied in Python from the ML feature table. | **Split label.** Identifies train, validate or test rows. Only validate and test errors measure performance on unseen months. |
+| predictions | actual | Joined from `ml_features_crossings.statewide_crossings` | Copied in Python from the ML feature table. | **Target.** The real statewide crossings for the month. Also a **dashboard field.** |
+| predictions | predicted | `ml_features_crossings` feature columns | Calculated in Python using the selected Random Forest (fitted on the train rows only). Rounded to 2 decimals. | **Model output.** The predicted statewide crossings. Also a **dashboard field.** |
+| predictions | error | `actual` and `predicted` (above) | Calculated in Python as `actual` minus `predicted`. Positive means the model predicted too low; negative means too high. Rounded to 2 decimals. | **Evaluation field.** Used to calculate MAE and to show errors on a dashboard. |
+| predictions | model_name | Created in Python | Set to the text `random_forest` for every row. | **Label.** Identifies which model produced the prediction. |
 
 ## Source Fields Used but Not Stored
 
@@ -62,10 +68,10 @@ validate the data. Their values are not stored as fields in the schema.
 | `state` | `Montana` | API filter (`$where`) in `extract_border_crossings.py`. Keeps Montana ports only. |
 | `border` | `US-Canada Border` | API filter. Excludes U.S.–Mexico ports. |
 | `measure` | `Personal Vehicle Passengers` | API filter. Keeps people in personal vehicles, not `Personal Vehicles` (the vehicle count), buses, trucks or pedestrians. |
-| `date` | All months (raw range `1996-01` to `2026-08`) | Used to create `month_id` and the other `dim_month` fields. Not stored in its raw timestamp form. |
+| `date` | All months (raw range `1996-01` to `2026-09` on 2026-11-04) | Used to create `month_id` and the other `dim_month` fields. Not stored in its raw timestamp form. |
 | `latitude`, `longitude`, `point` | n/a | Not used and not stored. They could support a future map. |
 
-Validation checked against the raw file: all 4,433 rows have the three filter
+Validation checked against the raw file on 2026-11-04: all 4,445 rows have the three filter
 values above. Each `port_code` has exactly one `port_name` (13 ports). There
 are no duplicate port-month rows and no missing `value` entries.
 
@@ -74,7 +80,7 @@ are no duplicate port-month rows and no missing `value` entries.
 | Source field | Value used | Purpose |
 |---|---|---|
 | Series ID `FXMUSDCAD` (in the API URL and as the key in `seriesDetail` and each observation) | `FXMUSDCAD` | Selects the monthly average USD/CAD series. `seriesDetail.FXMUSDCAD.description` confirms "Monthly average exchange rate of the US dollar in Canadian dollars." Used for validation. |
-| `observations[].d` | All months (raw range `2017-01-01` to `2026-09-01`, 117 months) | Used to create `month_id`. Not stored in its raw form. |
+| `observations[].d` | All months (raw range `2017-01-01` to `2026-10-01`, 118 months on 2026-11-04) | Used to create `month_id`. Not stored in its raw form. |
 
 ### Statistics Canada: `canadian_travel_raw.json`
 
@@ -85,8 +91,9 @@ are no duplicate port-month rows and no missing `value` entries.
 | `endReferencePeriod` (API parameter) | Today's date, generated in Python | API filter: last month returned (the latest published month). |
 | `status` | `SUCCESS` | Validation: the script stops if the API does not return `SUCCESS`. |
 | `object.vectorId`, `object.productId`, `object.coordinate` | `1296956601`, `24100053`, `1.47.1.0.0.0.0.0.0.0` | Validation: confirms the response is the requested series from table 24-10-0053-01. |
-| `vectorDataPoint[].refPer` | All months returned (`2017-01-01` to `2026-07-01`, 115 points on 2026-10-07) | Used to create `month_id`. Not stored in its raw form. |
-| `vectorDataPoint[].statusCode`, `symbolCode`, `scalarFactorCode` | `0` expected | Validation: `0` means a normal value with no status flag, reported in units (not thousands). |
+| `vectorDataPoint[].refPer` | All months returned (`2017-01-01` to `2026-08-01`, 116 points on 2026-11-04) | Used to create `month_id`. Not stored in its raw form. |
+| `vectorDataPoint[].statusCode`, `scalarFactorCode` | `0` expected | Validation: `0` means a normal value with no status flag, reported in units (not thousands). |
+| `vectorDataPoint[].symbolCode` | `0`, `1` or `3` accepted | Validation: official designations `0` (none), `1` (preliminary) and `3` (revised) are accepted; any other code stops `etl/transform.py`. The script prints a warning listing any preliminary months. |
 | `refPer2`, `refPerRaw`, `refPerRaw2`, `decimals`, `securityLevelCode`, `releaseTime`, `frequencyCode` | n/a | Not used and not stored. |
 
 The series is **not seasonally adjusted.** Table 24-10-0053-01 publishes only
@@ -107,16 +114,23 @@ The same table has two narrower alternatives that were not used:
 
 ## Coverage Notes
 
-- Monthly ranges in the raw files: BTS `1996-01`–`2026-08`, Bank of Canada
-  `2017-01`–`2026-09`, Statistics Canada `2017-01`–`2026-07` (start set by
-  `startRefPeriod`). The three sources have common coverage from `2017-01`
-  through `2026-07`.
-- `ml_features_crossings` has eligible rows from `2017-04` through `2026-07`.
+- Monthly ranges in the raw files on 2026-11-04: BTS `1996-01`–`2026-09`,
+  Bank of Canada `2017-01`–`2026-10`, Statistics Canada `2017-01`–`2026-08`
+  (start set by `startRefPeriod`). The three sources have common coverage from
+  `2017-01` through `2026-08`. `dim_month` runs from `2017-01` to `2026-10`
+  (118 months), the latest month in any source.
+- `ml_features_crossings` has eligible rows from `2017-04` through `2026-08`
+  (91 rows: 59 train, 12 validate, 20 test).
   The first three months (`2017-01`–`2017-03`) are removed because they lack
   the three prior months needed for `crossings_rolling_3`.
 - March 2020 through December 2021 are excluded from `ml_features_crossings`
   (COVID border restrictions), so its monthly coverage is not continuous
   across that period. These months remain in the dimension and fact tables.
+- Statistics Canada may publish its newest month as a preliminary value
+  (`symbolCode` 1). Preliminary values are included, but they may be revised
+  in later releases, so `canadian_auto_return_trips`, `national_travel_lag1`
+  and the predictions that use them may change in future pipeline runs. On
+  2026-11-04, August 2026 was preliminary.
 - See the Data Limitations section in `README.md`. BTS counts crossings, not
   unique travelers or nationality. Statistics Canada is a national trend and
   does not identify Montana as the destination.

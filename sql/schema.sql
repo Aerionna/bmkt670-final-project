@@ -1,3 +1,4 @@
+DROP TABLE IF EXISTS predictions CASCADE;
 DROP TABLE IF EXISTS ml_features_crossings CASCADE;
 DROP TABLE IF EXISTS fact_national_travel CASCADE;
 DROP TABLE IF EXISTS fact_exchange_rates CASCADE;
@@ -76,4 +77,19 @@ CREATE TABLE ml_features_crossings (
     is_fall               SMALLINT NOT NULL CHECK (is_fall IN (0, 1)),
     split                 TEXT NOT NULL
                           CHECK (split IN ('train', 'validate', 'test'))
+);
+
+
+-- One row represents one monthly prediction from the selected model.
+-- It is filled by model/train_model.py, not by etl/load.py.
+-- error = actual - predicted.
+CREATE TABLE predictions (
+    month_id     INTEGER PRIMARY KEY
+                 REFERENCES ml_features_crossings(month_id),
+    split        TEXT NOT NULL
+                 CHECK (split IN ('train', 'validate', 'test')),
+    actual       INTEGER NOT NULL CHECK (actual >= 0),
+    predicted    NUMERIC(12,2) NOT NULL CHECK (predicted >= 0),
+    error        NUMERIC(12,2) NOT NULL,
+    model_name   TEXT NOT NULL
 );

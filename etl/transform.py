@@ -105,10 +105,21 @@ for column in ["refPer", "value", "statusCode", "symbolCode", "scalarFactorCode"
     if column not in travel.columns:
         raise SystemExit(f"Error: Statistics Canada file is missing the field '{column}'")
 
-# 0 means a normal value with no flag, reported in units (not thousands).
-for column in ["statusCode", "symbolCode", "scalarFactorCode"]:
+# 0 means a normal value with no status flag, reported in units (not thousands).
+for column in ["statusCode", "scalarFactorCode"]:
     if (travel[column] != 0).any():
         raise SystemExit(f"Error: Statistics Canada field '{column}' has a value other than 0")
+
+# symbolCode marks official designations: 0 = none, 1 = preliminary, 3 = revised.
+# All three are official values, so they are accepted. Anything else stops the script.
+if not travel["symbolCode"].isin([0, 1, 3]).all():
+    raise SystemExit("Error: Statistics Canada field 'symbolCode' has a value other than 0, 1 or 3")
+
+# Preliminary values may change when Statistics Canada updates them, so warn about them.
+preliminary_months = travel.loc[travel["symbolCode"] == 1, "refPer"]
+if len(preliminary_months) > 0:
+    print("Warning: these Statistics Canada months are preliminary and may change "
+          "in future pipeline runs:", ", ".join(preliminary_months))
 
 # Turn the date into a real date, keep 2017 and later, and create month_id.
 travel["month_start"] = pd.to_datetime(travel["refPer"])
@@ -210,7 +221,7 @@ if (fact_exchange_rates["usd_cad_rate"] <= 0).any():
     raise SystemExit("Error: fact_exchange_rates has a usd_cad_rate that is not above zero")
 
 # After filling, every active port should have one row for every BTS month
-# (12 ports x 116 months = 1,392 rows with the current raw file).
+# (for example, 12 ports x 117 months = 1,404 rows on 2026-11-04).
 expected_border_rows = len(dim_port) * fact_border_crossings["month_id"].nunique()
 if len(fact_border_crossings) != expected_border_rows:
     raise SystemExit(f"Error: fact_border_crossings has {len(fact_border_crossings)} rows, "
@@ -378,6 +389,5 @@ print(f"  {len(ml_features_crossings)} rows, months {ml_features_crossings['mont
 print(f"  train: {(ml_features_crossings['split'] == 'train').sum()}, "
       f"validate: {(ml_features_crossings['split'] == 'validate').sum()}, "
       f"test: {(ml_features_crossings['split'] == 'test').sum()}")
-print("  (expected with the current source files: 90 rows, 59 train, 12 validate, 19 test)")
 print()
 print(f"Saved 6 CSV files to {clean_folder}")

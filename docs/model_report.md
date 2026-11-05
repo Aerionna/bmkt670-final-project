@@ -69,13 +69,13 @@ All three models beat the baseline. Random Forest had the lowest validation MAE,
 
 ## Final Test Result
 
-Random Forest was selected because it had the lowest validation MAE. The same fitted model (trained on the 59 training months only) was then scored once on the 19 test months, January 2025 through July 2026.
+Random Forest was selected because it had the lowest validation MAE. The same fitted model (trained on the 59 training months only) was then scored once on the 20 test months, January 2025 through August 2026.
 
-| Selected model | Validation MAE (2024) | Test MAE (Jan 2025–Jul 2026) |
+| Selected model | Validation MAE (2024) | Test MAE (Jan 2025–Aug 2026) |
 | :------------- | --------------------: | ---------------------------: |
-| Random Forest | 10,096 | 13,243 |
+| Random Forest | 10,096 | 15,508 |
 
-Test performance was worse: the test MAE was 3,148 crossings (about 31%) higher than the validation MAE. The higher test MAE may reflect changes in Canadian travel patterns during 2025–2026 that were not fully represented in the training data. The test set also contains only 19 months, so a few unusual months can have a noticeable effect on MAE. These are possible explanations and were not tested in this analysis. No model, feature or setting changes were made after viewing the test result.
+Test performance was worse: the test MAE was 5,412 crossings (about 53.6%) higher than the validation MAE. The two largest test errors were in August. In August 2026 the model predicted 176,196 crossings against an actual 117,663, an error of −58,533, meaning it predicted too high; August 2025 was overpredicted by a similar amount (−58,642). The model appears to rely heavily on the higher summer levels seen in the pre-COVID training years, when August crossings were about 185,000–192,000. This describes a limitation of the model and does not prove why recent August traffic was lower. More broadly, the higher test MAE may reflect changes in Canadian travel patterns during 2025–2026 that were not fully represented in the training data, and with only 20 test months, a few unusual months can noticeably affect MAE; these explanations were not tested. The August 2026 crossings come from BTS, and the row's travel feature uses July 2026, which is final. The preliminary August 2026 Statistics Canada value matters for a different reason: the ML table only includes months that all three sources share, so that value, which may be revised, is why the August 2026 row exists at all. No model, feature or setting changes were made after viewing the test results.
 
 ## Feature Importance
 

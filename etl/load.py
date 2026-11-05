@@ -26,17 +26,6 @@ table_names = [
     "ml_features_crossings",
 ]
 
-# Row counts with the current source files. These grow when the APIs publish
-# new months, so a difference is only reported, not treated as an error.
-expected_row_counts = {
-    "dim_month": 117,
-    "dim_port": 12,
-    "fact_border_crossings": 1392,
-    "fact_exchange_rates": 117,
-    "fact_national_travel": 115,
-    "ml_features_crossings": 90,
-}
-
 
 # --- 2. Database settings -----------------------------------------------------
 # Read .env from the project folder. The values are never printed.
@@ -92,9 +81,16 @@ try:
         cursor.execute(f"SELECT COUNT(*) FROM {table_name}")
         row_count = cursor.fetchone()[0]  # fetchone() returns one row; [0] is its first value
         print(f"Loaded {table_name}: {row_count} rows")
-        if row_count != expected_row_counts[table_name]:
-            print(f"  Note: expected {expected_row_counts[table_name]} rows with the current "
-                  f"source files, got {row_count}")
+
+        # The table must hold every data row in the CSV (all lines except the header).
+        # Counting the file each time means new months never make this check stale.
+        with open(csv_path, encoding="utf-8") as csv_file:
+            csv_row_count = len(csv_file.readlines()) - 1
+        if row_count != csv_row_count:
+            connection.rollback()
+            print(f"Error: {table_name} has {row_count} rows in the database but "
+                  f"{csv_row_count} in the CSV. The load was rolled back.")
+            raise SystemExit(1)
 
     # Nothing is saved until this line. It only runs if every step above worked.
     connection.commit()
