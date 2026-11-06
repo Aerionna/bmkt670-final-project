@@ -48,7 +48,7 @@ The previous month’s Canadian automobile trips show the strongest visible nume
 
 ## Evaluation Metric
 
-The target, `statewide_crossings`, is a numeric count, so this is a regression problem. Models will be compared using mean absolute error (MAE): the average absolute difference between actual and predicted monthly crossings. MAE stays in passenger-crossing units, so a nontechnical manager can read it directly, and a lower MAE means better predictions. For example, an MAE of 8,000 means predictions are off by about 8,000 passenger crossings per month on average. MAE will be used to compare the baseline with later models.
+Models were evaluated using mean absolute error (MAE), which measures the average size of the difference between predicted and actual monthly crossings. Random Forest had a validation MAE of 10,096 and a final test MAE of 15,508. In business terms, across the 20 unseen test months, the model’s predictions differed from actual statewide passenger crossings by about 15,500 passengers per month on average. 
 
 ## Baseline Model
 
@@ -88,3 +88,7 @@ Test performance was worse: the test MAE was 5,412 crossings (about 53.6%) highe
 | is_fall | 1.9% |
 
 The model relied most on whether the month was in summer (50.0%), which matches the training-data finding that summer months averaged about 2.6 times as many crossings as winter months. The previous month's Montana crossings were the second most important signal (32.0%), suggesting the model used recent traffic to gauge the current level of travel. The previous month's Canadian automobile trips were a smaller but useful signal (8.8%); in the training data, higher national travel was associated with higher Montana crossings (r = 0.61). The previous month's exchange rate contributed less than 1%, consistent with its weak relationship with crossings in the training data. Feature importance shows what the model relied on, not what caused changes in crossings, and similar features such as last month's crossings and the three-month average may share importance between them.
+
+## Limitations
+
+The model was trained on only 59 months, including just 24 post-COVID months, so it may not adapt quickly to lasting changes in travel patterns; the recent August overpredictions demonstrate this limitation. BTS counts all inbound personal-vehicle passengers at Montana ports, not specifically Canadian residents or tourists, so the results should be interpreted as border-crossing volume rather than Canadian visitation. The current workflow evaluates historical months with known outcomes and does not yet generate a true forecast for a future month without an actual target row. More post-COVID history—especially additional summer months—and Montana-specific data about traveler residency and trip purpose would help most. Information about border policies, holidays, fuel prices and major events could also improve future models, while preliminary Statistics Canada values may be revised.
