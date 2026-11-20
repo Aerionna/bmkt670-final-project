@@ -21,15 +21,37 @@ One row in my ML feature table = one month of statewide Montana crossings.
 ## How to Run
 Prerequisites:
 - PostgreSQL is running.
-- The project virtual environment is activated (packages installed with `pip install -r requirements.txt`).
-- A local `.env` file contains the required database settings: `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER` and `DB_PASSWORD`.
-- The command is run from the repository's top-level folder.
+- A local `.env` file in the repository's top-level folder contains `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD` and `ANTHROPIC_API_KEY`. Every script reads the database password from `DB_PASSWORD` in this file, and `.env` is ignored by Git.
 
-```powershell
-python run_pipeline.py
-```
+Run every command below from the repository's top-level folder.
 
-This one command downloads all three raw sources, transforms them into clean tables and the ML feature table, recreates and loads the PostgreSQL database, and runs all six quality checks.
+1. Activate the virtual environment:
+
+   ```powershell
+   .venv\Scripts\Activate.ps1
+   ```
+
+2. Install the requirements if needed (the first time, or after `requirements.txt` changes):
+
+   ```powershell
+   pip install -r requirements.txt
+   ```
+
+3. Run the pipeline first, so PostgreSQL is rebuilt and the saved model file exists:
+
+   ```powershell
+   python run_pipeline.py
+   ```
+
+   This one command downloads all three raw sources, transforms them into clean tables and the ML feature table, recreates and loads the PostgreSQL database, runs all six quality checks, trains the model (saving its predictions and `model/crossings_model.joblib`), and writes the AI summaries. The final AI-summary step calls the Claude API; a normal full run costs about $0.01.
+
+4. Start the dashboard:
+
+   ```powershell
+   streamlit run dashboard/app.py
+   ```
+
+   Run this from the top-level folder while the virtual environment is active, so Streamlit uses the project's installed packages. The dashboard opens in a browser. It reads from PostgreSQL and the saved model file and makes no API calls.
 
 
 ## AI Usage
