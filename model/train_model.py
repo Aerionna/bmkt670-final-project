@@ -3,12 +3,14 @@
 #          split it into train, validate and test DataFrames, explore the
 #          training rows with summaries and charts, score a baseline and three
 #          regression models on the validation rows, test the selected model,
-#          and save its predictions to the predictions table.
+#          save its predictions to the predictions table, and save the fitted
+#          model to model/crossings_model.joblib for the dashboard.
 # Run from the project folder:  python model/train_model.py
 
 import os  # reads the settings that load_dotenv puts into the environment
 from pathlib import Path  # helps build file paths that work on any computer
 
+import joblib  # saves the fitted model to a file
 import matplotlib.pyplot as plt  # draws and saves the charts
 import pandas as pd  # holds the table as a DataFrame
 import psycopg2  # talks to the PostgreSQL database
@@ -447,3 +449,19 @@ finally:
         cursor.close()
     if connection is not None:
         connection.close()
+
+
+# --- 12. Save the fitted model for the dashboard ------------------------------
+# The dashboard loads this file to predict future months, so it never retrains.
+# The feature names are saved in their exact training order, because the model
+# expects its inputs in that order. The pipeline rebuilds this file on every run.
+model_bundle = {
+    "model": selected_model,  # the same Random Forest, fitted on train only
+    "feature_names": list(feature_columns),
+    "model_name": selected_model_name,
+}
+model_path = project_root / "model" / "crossings_model.joblib"
+joblib.dump(model_bundle, model_path)
+
+print()
+print(f"Saved the fitted {selected_model_name} model to {model_path.relative_to(project_root)}")

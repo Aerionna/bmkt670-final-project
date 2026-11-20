@@ -12,12 +12,12 @@
 |---|---|---|
 | 1 | How have inbound passenger crossings at Montana's Canadian border changed over time and by season? | Built |
 | 2 | How accurately does the model predict monthly crossings, and when are its predictions least reliable? | Built |
-| 3 | Based on predicted border traffic, should the organization adjust marketing aimed at Canadian travelers? | Planned |
-| 4 | How do border-crossing patterns differ among Montana's ports of entry? | Planned |
+| 3 | Based on predicted border traffic, should the organization adjust marketing aimed at Canadian travelers? | Built |
+| 4 | How do border-crossing patterns differ among Montana's ports of entry? | Built |
 
 ## 3. AI Feature
 
-`ai/generate_summaries.py` uses `claude-haiku-5-5` to write a two-sentence summary of each test prediction. The summaries are saved in PostgreSQL (`ai_summaries`), and the dashboard reads the saved text without making new API calls. Each reply is checked before saving: two sentences, under 55 words, and every number taken from the supplied facts.
+`ai/generate_summaries.py` uses `claude-haiku-5-5` to write a two-sentence summary of each test prediction. The summaries are saved in PostgreSQL (`ai_summaries`), and Page 3 of the dashboard displays the saved text without making new API calls. Each reply is checked before saving: two sentences, under 55 words, and every number taken from the supplied facts.
 
 Reusable prompt (condensed; full text in the script):
 
