@@ -386,7 +386,9 @@ try:
 
     # TRUNCATE empties the table first, so running this script again never
     # creates duplicate rows. psycopg2 starts a transaction automatically.
-    cursor.execute("TRUNCATE TABLE predictions")
+    # CASCADE also empties ai_summaries, which points at predictions: old
+    # summaries describe old predictions, and ai/generate_summaries.py refills it.
+    cursor.execute("TRUNCATE TABLE predictions CASCADE")
     cursor.executemany(
         "INSERT INTO predictions (month_id, split, actual, predicted, error, model_name) "
         "VALUES (%s, %s, %s, %s, %s, %s)",

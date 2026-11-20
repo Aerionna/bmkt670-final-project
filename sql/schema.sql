@@ -1,3 +1,4 @@
+DROP TABLE IF EXISTS ai_summaries CASCADE;
 DROP TABLE IF EXISTS predictions CASCADE;
 DROP TABLE IF EXISTS ml_features_crossings CASCADE;
 DROP TABLE IF EXISTS fact_national_travel CASCADE;
@@ -92,4 +93,14 @@ CREATE TABLE predictions (
     predicted    NUMERIC(12,2) NOT NULL CHECK (predicted >= 0),
     error        NUMERIC(12,2) NOT NULL,
     model_name   TEXT NOT NULL
+);
+
+
+-- One row represents a short plain-language AI summary of one test-month
+-- prediction. It is filled by ai/generate_summaries.py, not by etl/load.py.
+CREATE TABLE ai_summaries (
+    month_id      INTEGER PRIMARY KEY
+                  REFERENCES predictions(month_id),
+    summary       TEXT NOT NULL CHECK (summary <> ''),
+    generated_at  TIMESTAMP NOT NULL
 );

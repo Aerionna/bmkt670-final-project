@@ -4,6 +4,7 @@
 # Every number on these pages comes live from our PostgreSQL database.
 
 import os  # reads the settings that load_dotenv puts into the environment
+from decimal import ROUND_HALF_UP, Decimal  # rounds .5 up, e.g. 62,468.50 -> 62,469
 from pathlib import Path  # builds file paths that work on any computer
 
 import altair as alt  # draws charts (installed together with Streamlit)
@@ -57,6 +58,20 @@ TRAIN_AVERAGE_SQL = """
     WHERE split = 'train'
 """
 
+# Page 2 SQL: the saved AI summaries for the test months. The dashboard only
+# reads these from PostgreSQL; it never calls the Claude API itself.
+AI_SUMMARIES_SQL = """
+    SELECT
+        m.month_start,
+        a.summary,
+        a.generated_at
+    FROM ai_summaries AS a
+    JOIN predictions AS p ON a.month_id = p.month_id
+    JOIN dim_month AS m ON a.month_id = m.month_id
+    WHERE p.split = 'test'
+    ORDER BY m.month_start
+"""
+
 
 def run_query(sql):
     """Run one SQL query and return the results as a pandas DataFrame."""
@@ -88,6 +103,17 @@ def run_query(sql):
         connection.close()
 
     return pd.DataFrame(rows, columns=column_names)
+
+
+def whole_number(value):
+    """Format a number as a whole number with commas, rounding .5 up.
+
+    Python's normal rounding sends .5 to the nearest EVEN number, so 62,468.50
+    would show as 62,468. ROUND_HALF_UP gives the conventional 62,469, which
+    also matches how the chart tooltips round.
+    """
+    rounded = Decimal(str(value)).quantize(Decimal(1), rounding=ROUND_HALF_UP)
+    return f"{int(rounded):,}"
 
 
 def show_database_error(error):
@@ -325,9 +351,9 @@ def show_page_2():
     # st.columns(2) puts the two numbers side by side.
     left_column, right_column = st.columns(2)
     with left_column:
-        st.metric("Random Forest MAE", f"{model_mae:,.0f}")
+        st.metric("Random Forest MAE", whole_number(model_mae))
     with right_column:
-        st.metric("Baseline MAE (training average)", f"{baseline_mae:,.0f}")
+        st.metric("Baseline MAE (training average)", whole_number(baseline_mae))
 
     # Explain the comparison in plain language.
     difference = baseline_mae - model_mae
@@ -335,14 +361,14 @@ def show_page_2():
         percent_better = difference / baseline_mae * 100
         st.write(
             f"On the {len(results)} validate and test months, the model's predictions "
-            f"were off by {difference:,.0f} fewer crossings per month on average than "
-            f"always guessing the training average of {train_average:,.0f}, "
+            f"were off by {whole_number(difference)} fewer crossings per month on average than "
+            f"always guessing the training average of {whole_number(train_average)}, "
             f"about {percent_better:.0f}% less error."
         )
     else:
         st.write(
             f"On the {len(results)} validate and test months, the model did not beat "
-            f"always guessing the training average of {train_average:,.0f}."
+            f"always guessing the training average of {whole_number(train_average)}."
         )
 
     # --- Section 3: biggest misses -------------------------------------------
@@ -369,13 +395,14 @@ def show_page_2():
     ].copy()
     table["unusual"] = table["unusual"].map({True: "Yes", False: "No"})
 
-    # .style.format controls how numbers look: commas, and two decimals for the ratio.
+    # .style.format controls how numbers look: whole numbers with commas
+    # (rounded half up), and two decimals for the ratio.
     st.dataframe(
         table.style.format(
             {
-                "actual": "{:,.0f}",
-                "predicted": "{:,.0f}",
-                "absolute_error": "{:,.0f}",
+                "actual": whole_number,
+                "predicted": whole_number,
+                "absolute_error": whole_number,
                 "times_model_mae": "{:.2f}",
             }
         ),
@@ -395,7 +422,7 @@ def show_page_2():
             direction = "too low"
         summary = (
             f"The largest unusual miss was {worst['month']}, when the model predicted "
-            f"{worst['predicted']:,.0f} crossings but {worst['actual']:,.0f} actually "
+            f"{whole_number(worst['predicted'])} crossings but {whole_number(worst['actual'])} actually "
             f"crossed, about {worst['times_model_mae']:.1f} times its typical error and "
             f"{direction}."
         )
@@ -412,6 +439,38 @@ def show_page_2():
         else:
             reason = " The project's analysis did not identify a cause for this miss."
         st.write(summary + reason)
+
+    # --- Section 5: AI summary for one test month ----------------------------
+    st.subheader("AI Summary of a Test Month")
+
+    # This section has its own error handling, so the rest of the page still
+    # shows if the summaries have not been generated yet.
+    try:
+        ai_summaries = run_query(AI_SUMMARIES_SQL)
+    except psycopg2.Error:
+        ai_summaries = pd.DataFrame()
+
+    if ai_summaries.empty:
+        st.info("No AI summaries are saved yet. Run ai/generate_summaries.py to create them.")
+    else:
+        # A readable month for the dropdown, e.g. "August 2026".
+        ai_summaries["month"] = pd.to_datetime(ai_summaries["month_start"]).dt.strftime(
+            "%B %Y"
+        )
+        month_options = ai_summaries["month"].tolist()
+
+        # index=len(...) - 1 starts on the most recent test month.
+        chosen_month = st.selectbox(
+            "Choose a test month:", month_options, index=len(month_options) - 1
+        )
+        chosen = ai_summaries[ai_summaries["month"] == chosen_month].iloc[0]
+
+        st.write(chosen["summary"])
+        st.caption(
+            "Written by Claude (an AI model) using only this month's saved facts, "
+            f"on {chosen['generated_at']:%B %d, %Y}. It describes the numbers but "
+            "does not prove why crossings changed."
+        )
 
 
 # =============================================================================
